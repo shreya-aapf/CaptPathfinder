@@ -15,6 +15,7 @@ dist/
 build/
 *.pyc
 *.pyo
+node_modules/*
 
 # Virtual environments
 venv/
@@ -90,3 +91,4 @@ dmypy.json
 # Cython debug symbols
 cython_debug/
 .cursor/*
+supabase/.temp/*
