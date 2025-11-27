@@ -1,0 +1,48 @@
+{
+  "version": "v1",
+  "exclusion_patterns": [
+    "student",
+    "club",
+    "volunteer",
+    "intern",
+    "retired",
+    "ex-",
+    "former",
+    "seeking",
+    "aspiring",
+    "head of",
+    "head,"
+  ],
+  "csuite_patterns": [
+    "\\bchief\\b.*\\bofficer\\b",
+    "\\bc[a-z]o\\b",
+    "\\bceo\\b",
+    "\\bcfo\\b",
+    "\\bcoo\\b",
+    "\\bcto\\b",
+    "\\bciso\\b",
+    "\\bcio\\b",
+    "\\bcro\\b",
+    "\\bcmo\\b",
+    "\\bchro\\b",
+    "\\bcpo\\b",
+    "\\bcdo\\b",
+    "\\bcso\\b",
+    "\\bcco\\b",
+    "\\bcao\\b",
+    "\\bclo\\b",
+    "\\bpresident\\b(?!.*\\bvice\\b)"
+  ],
+  "vp_patterns": [
+    "\\bvp\\b",
+    "\\bv\\.p\\.\\b",
+    "\\bvice president\\b",
+    "\\bsvp\\b",
+    "\\bevp\\b",
+    "\\bavp\\b",
+    "\\bexecutive vice president\\b",
+    "\\bsenior vice president\\b",
+    "\\bassociate vice president\\b"
+  ]
+}
+
