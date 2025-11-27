@@ -18,7 +18,7 @@ Automation Anywhere Bots
 Email & Teams notifications ✉️
 ```
 
-**Total Cost: ~$25/month** (just Supabase Pro)
+**Total Cost: $0/month** (100% Free Tier!)
 
 ---
 
@@ -56,13 +56,11 @@ Email & Teams notifications ✉️
 5. Click **Copy** 📋
 6. Save this - you'll need it!
 
-#### 1.3 Enable pg_cron (Pro Plan Required)
+#### 1.3 Verify Plan
 
-**Note:** pg_cron requires Supabase Pro plan ($25/month)
+Good news! **This works on Supabase Free Tier!**
 
-1. Go to **Settings** → **Billing**
-2. Upgrade to Pro if needed
-3. pg_cron will be automatically available
+We use Supabase Edge Function cron triggers instead of pg_cron, so no Pro plan needed.
 
 ---
 
@@ -80,8 +78,10 @@ psql $SUPABASE_DB_URL -f migrations/001_initial_schema.sql
 # Run migration 2: Add classification & processing functions
 psql $SUPABASE_DB_URL -f migrations/002_serverless_functions.sql
 
-# Run migration 3: Setup cron jobs
+# Run migration 3: Setup digest/report functions
 psql $SUPABASE_DB_URL -f scripts/create_functions.sql
+
+# Note: No pg_cron setup needed - we use Edge Function cron triggers!
 ```
 
 **Verify tables created:**
@@ -116,12 +116,20 @@ supabase link --project-ref YOUR_PROJECT_REF
 # Navigate to functions directory
 cd supabase/functions
 
-# Deploy webhook handler (receives inSided webhooks)
+# Deploy all functions
 supabase functions deploy webhook-handler
-
-# Deploy digest sender (sends AA bot notifications)
+supabase functions deploy process-events
 supabase functions deploy send-digests
+supabase functions deploy generate-reports
+supabase functions deploy housekeeping
 ```
+
+**What each function does:**
+- `webhook-handler` - Receives inSided webhooks (real-time)
+- `process-events` - Processes pending events (runs every minute via cron)
+- `send-digests` - Sends weekly digests (runs Friday 5 PM EST via cron)
+- `generate-reports` - Creates month-end reports (runs last day of month via cron)
+- `housekeeping` - Purges old events (runs daily 2 AM EST via cron)
 
 **Your webhook URL will be:**
 ```
@@ -174,36 +182,25 @@ supabase secrets list
 
 ---
 
-### Step 5: Configure pg_cron for Weekly Digests (2 minutes)
+### Step 5: Verify Cron Schedules (1 minute)
 
-Run this SQL to setup weekly digest job:
+**Good news:** Cron schedules are already configured in the Edge Function `config.json` files!
 
-```sql
--- Get your project ref from Supabase dashboard URL
--- Replace YOUR_PROJECT_REF below with your actual project ref
+**No additional setup needed.** When you deployed the functions, the schedules were automatically set up:
 
-SELECT cron.schedule(
-    'weekly-digest-sender',
-    '0 17 * * FRI',  -- Friday 5 PM EST
-    $$
-    SELECT net.http_post(
-        url := 'https://YOUR_PROJECT_REF.supabase.co/functions/v1/send-digests',
-        headers := '{"Content-Type": "application/json"}'::jsonb
-    );
-    $$
-);
-```
+- `process-events` - Every minute (`* * * * *`)
+- `send-digests` - Friday 5 PM EST (`0 17 * * FRI`)
+- `generate-reports` - Last day of month 11:55 PM EST (`55 23 28-31 * *`)
+- `housekeeping` - Daily 2 AM EST (`0 2 * * *`)
 
-Run this command:
-```bash
-psql $SUPABASE_DB_URL -c "SELECT cron.schedule('weekly-digest-sender', '0 17 * * FRI', \$\$SELECT net.http_post(url := 'https://YOUR_PROJECT_REF.supabase.co/functions/v1/send-digests', headers := '{\"Content-Type\": \"application/json\"}'::jsonb);\$\$);"
-```
-
-**Don't forget to replace `YOUR_PROJECT_REF`!**
+**Verify schedules in Supabase Dashboard:**
+1. Go to your project
+2. Click **Edge Functions** in sidebar
+3. Each function shows its schedule
 
 ---
 
-### Step 6: Configure inSided Webhooks (5 minutes)
+### Step 6: Configure inSided Webhooks (3 minutes)
 
 #### 6.1 Get inSided API Key
 
@@ -226,7 +223,7 @@ psql $SUPABASE_DB_URL -c "SELECT cron.schedule('weekly-digest-sender', '0 17 * *
 
 ---
 
-### Step 7: Test the System (10 minutes)
+### Step 7: Test the System (5 minutes)
 
 #### 7.1 Test Webhook Receipt
 
@@ -258,9 +255,9 @@ psql $SUPABASE_DB_URL -c "SELECT * FROM events_raw ORDER BY received_at DESC LIM
 
 You should see your test event.
 
-#### 7.3 Wait 1 Minute (pg_cron processes events)
+#### 7.3 Wait 1 Minute (Edge Function processes events)
 
-The `process-pending-events` cron job runs every minute.
+The `process-events` Edge Function runs every minute automatically.
 
 After 1 minute, check:
 
@@ -314,7 +311,7 @@ Look for:
 
 ---
 
-### Step 8: Update inSided Test (Production Test)
+### Step 8: Test with Real inSided User (Production Test)
 
 #### 8.1 Test with Real inSided User
 
@@ -336,9 +333,9 @@ supabase functions logs webhook-handler --follow
 psql $SUPABASE_DB_URL -c "SELECT * FROM detections ORDER BY detected_at DESC LIMIT 1;"
 ```
 
-**Check pg_cron logs:**
+**Check Edge Function logs:**
 ```bash
-psql $SUPABASE_DB_URL -c "SELECT * FROM cron.job_run_details ORDER BY start_time DESC LIMIT 10;"
+supabase functions logs process-events --follow
 ```
 
 ---
@@ -347,12 +344,13 @@ psql $SUPABASE_DB_URL -c "SELECT * FROM cron.job_run_details ORDER BY start_time
 
 | Component | Where It Runs | When |
 |-----------|---------------|------|
-| Webhook listener | Supabase Edge Function | Real-time (on webhook) |
-| Event processing | PostgreSQL function | Every minute (pg_cron) |
+| Webhook listener | Edge Function (`webhook-handler`) | Real-time (on webhook) |
+| Event processing | Edge Function (`process-events`) | Every minute (cron) |
 | Classification | PostgreSQL function | During event processing |
-| Weekly digests | Supabase Edge Function | Friday 5 PM EST (pg_cron) |
-| Monthly reports | PostgreSQL function | Last day of month (pg_cron) |
-| AA bot deployment | Supabase Edge Function | When sending digests |
+| Weekly digests | Edge Function (`send-digests`) | Friday 5 PM EST (cron) |
+| Monthly reports | Edge Function (`generate-reports`) | Last day of month (cron) |
+| Housekeeping | Edge Function (`housekeeping`) | Daily 2 AM EST (cron) |
+| AA bot deployment | Edge Function (`send-digests`) | When sending digests |
 
 ---
 
@@ -373,7 +371,10 @@ psql $SUPABASE_DB_URL -f scripts/create_functions.sql
 # ✅ Step 4: Deploy Edge Functions
 cd supabase/functions
 supabase functions deploy webhook-handler
+supabase functions deploy process-events
 supabase functions deploy send-digests
+supabase functions deploy generate-reports
+supabase functions deploy housekeeping
 
 # ✅ Step 5: Set secrets
 supabase secrets set AA_CONTROL_ROOM_URL=...
@@ -382,9 +383,8 @@ supabase secrets set AA_API_KEY=...
 supabase secrets set AA_EMAIL_BOT_ID=...
 supabase secrets set AA_TEAMS_BOT_ID=...
 
-# ✅ Step 6: Setup weekly digest cron
-# (Replace YOUR_PROJECT_REF with your actual project ref!)
-psql $SUPABASE_DB_URL -c "SELECT cron.schedule('weekly-digest-sender', '0 17 * * FRI', \$\$SELECT net.http_post(url := 'https://YOUR_PROJECT_REF.supabase.co/functions/v1/send-digests', headers := '{\"Content-Type\": \"application/json\"}'::jsonb);\$\$);"
+# ✅ Step 6: Cron schedules automatically set (no action needed!)
+# Schedules are defined in config.json files for each Edge Function
 ```
 
 ---
@@ -411,31 +411,27 @@ AA_TEAMS_BOT_ID=67890
 
 ## ❓ Troubleshooting
 
-### Error: "schema 'cron' does not exist"
+### Error: "Failed to deploy function"
 
-**Solution:** pg_cron not enabled
+**Solution:** Check configuration
 
-1. Check Supabase plan (must be Pro for pg_cron)
-2. Enable extension:
-   ```sql
-   CREATE EXTENSION IF NOT EXISTS pg_cron;
-   ```
-3. Re-run migration 002
+1. Verify you're logged in: `supabase login`
+2. Verify project is linked: `supabase link --project-ref YOUR_REF`
+3. Check function logs: `supabase functions logs FUNCTION_NAME`
 
 ### Events Not Processing
 
-**Check pg_cron job:**
-```sql
--- View jobs
-SELECT * FROM cron.job;
+**Check Edge Function:**
+```bash
+# View logs
+supabase functions logs process-events --follow
 
--- View job history
-SELECT * FROM cron.job_run_details 
-ORDER BY start_time DESC 
-LIMIT 10;
+# Manually trigger
+curl -X POST https://YOUR_PROJECT_REF.supabase.co/functions/v1/process-events
 
--- Manually trigger
-SELECT process_pending_events();
+# Check if scheduled
+# Go to Supabase Dashboard → Edge Functions → process-events
+# Should show: Schedule: * * * * * (every minute)
 ```
 
 ### Edge Function Errors
@@ -480,22 +476,23 @@ SELECT * FROM classify_job_title('Software Engineer');
 
 ## 📊 Monitoring
 
-### View All Cron Jobs
+### View All Edge Functions and Schedules
 
-```sql
-SELECT 
-    jobname,
-    schedule,
-    command
-FROM cron.job;
+**In Supabase Dashboard:**
+1. Go to **Edge Functions**
+2. See all deployed functions with their schedules
+
+**Or via CLI:**
+```bash
+supabase functions list
 ```
 
-Expected jobs:
-- `process-pending-events` - Every minute
-- `weekly-digest` - Friday 5 PM
-- `month-end-report` - Last day of month, 11:55 PM
-- `housekeeping` - Daily 2 AM
-- `weekly-digest-sender` - Friday 5 PM
+Expected functions:
+- `webhook-handler` - No schedule (triggered by webhook)
+- `process-events` - Every minute (`* * * * *`)
+- `send-digests` - Friday 5 PM (`0 17 * * FRI`)
+- `generate-reports` - Last day of month 11:55 PM (`55 23 28-31 * *`)
+- `housekeeping` - Daily 2 AM (`0 2 * * *`)
 
 ### Check System Health
 
@@ -520,11 +517,12 @@ SELECT COUNT(*) FROM digests WHERE NOT sent;
 ### Edge Function Logs
 
 ```bash
-# Follow webhook logs
+# Follow logs for each function
 supabase functions logs webhook-handler --follow
-
-# Follow digest logs
+supabase functions logs process-events --follow
 supabase functions logs send-digests --follow
+supabase functions logs generate-reports --follow
+supabase functions logs housekeeping --follow
 ```
 
 ---
@@ -560,12 +558,21 @@ supabase functions deploy send-digests
 
 ### Change Schedule
 
-```sql
--- Change digest to Monday 9 AM instead of Friday 5 PM
-SELECT cron.unschedule('weekly-digest-sender');
-SELECT cron.schedule('weekly-digest-sender', '0 9 * * MON', 
-  $$SELECT net.http_post(...);$$
-);
+Edit the `config.json` file for the function:
+
+```json
+// supabase/functions/send-digests/config.json
+{
+  "name": "send-digests",
+  "verify_jwt": false,
+  "import_map": "./import_map.json",
+  "schedule": "0 9 * * MON"  // Change to Monday 9 AM
+}
+```
+
+**Re-deploy:**
+```bash
+supabase functions deploy send-digests
 ```
 
 ---
@@ -584,26 +591,29 @@ SELECT cron.schedule('weekly-digest-sender', '0 9 * * MON',
 ## 📈 What Happens Automatically
 
 ### Every Minute
-pg_cron calls `process_pending_events()`:
+`process-events` Edge Function runs:
+- Calls PostgreSQL `process_pending_events()` function
 - Processes events from `events_raw`
 - Classifies job titles (SQL regex)
 - Updates `user_state` (only seniors)
 - Creates `detections` records
 
 ### Every Friday at 5 PM EST
-pg_cron triggers `send-digests` Edge Function:
+`send-digests` Edge Function runs:
 - Fetches detections from past week
 - Authenticates with AA Control Room
 - Deploys email bot with HTML digest
 - Deploys Teams bot with markdown message
 
 ### Last Day of Month at 11:55 PM EST
-pg_cron calls `build_month_end_report()`:
+`generate-reports` Edge Function runs:
+- Calls PostgreSQL `build_month_end_report()` function
 - Generates CSV and HTML reports
 - Stores metadata in `reports` table
 
 ### Daily at 2 AM EST
-pg_cron calls `purge_old_events()`:
+`housekeeping` Edge Function runs:
+- Calls PostgreSQL `purge_old_events()` function
 - Deletes events older than 14 days
 
 ---
@@ -619,9 +629,9 @@ After completing all steps:
 5. ✅ Monthly reports generate automatically
 6. ✅ Everything is serverless
 
-**Total deployment time: ~30 minutes**
+**Total deployment time: ~25 minutes**
 
-**Total cost: ~$25/month** (just Supabase Pro)
+**Total cost: $0/month** (100% Free Tier!) 🎉
 
 ---
 
@@ -636,8 +646,8 @@ supabase functions logs webhook-handler
 # View digest logs
 supabase functions logs send-digests
 
-# Check cron jobs
-psql $SUPABASE_DB_URL -c "SELECT * FROM cron.job;"
+# List Edge Functions
+supabase functions list
 
 # Check recent detections
 psql $SUPABASE_DB_URL -c "SELECT * FROM detections ORDER BY detected_at DESC LIMIT 10;"
@@ -651,10 +661,10 @@ psql $SUPABASE_DB_URL -c "SELECT process_pending_events();"
 
 ### Common Issues
 
-**"pg_cron not available"** → Upgrade to Supabase Pro  
+**"Function not found"** → Deploy all Edge Functions  
 **"Authentication failed"** → Check AA_USERNAME and AA_API_KEY  
 **"Bot not found"** → Verify bot IDs are correct (numeric)  
-**"Events not processing"** → Check pg_cron job status  
+**"Events not processing"** → Check Edge Function logs and schedules  
 
 ---
 

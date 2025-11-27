@@ -4,8 +4,8 @@
 -- This replaces the Python classification logic with pure SQL/plpgsql
 -- Runs directly in the database for maximum performance
 
--- First, ensure pg_cron extension is enabled
-CREATE EXTENSION IF NOT EXISTS pg_cron;
+-- Note: pg_cron is not used in this version (requires Pro plan)
+-- Instead, we'll use Supabase Edge Functions with cron triggers (free!)
 
 CREATE OR REPLACE FUNCTION classify_job_title(title TEXT)
 RETURNS TABLE(is_senior BOOLEAN, seniority_level TEXT) AS $$
@@ -146,13 +146,11 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- =====================================================
--- Setup pg_cron job to process events every minute
+-- Note: pg_cron scheduling is removed (requires Pro plan)
+-- Instead, use Supabase Edge Functions with cron triggers
+-- See supabase/functions/process-events/index.ts
+-- Deploy with: supabase functions deploy process-events --no-verify-jwt
 -- =====================================================
-SELECT cron.schedule(
-    'process-pending-events',
-    '* * * * *',  -- Every minute
-    $$SELECT process_pending_events();$$
-);
 
 -- =====================================================
 -- Helper function to get pending digest data
