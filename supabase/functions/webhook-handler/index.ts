@@ -26,20 +26,64 @@ serve(async (req) => {
     // Parse webhook payload from inSided
     const payload = await req.json()
     
-    console.log('Received webhook:', payload)
+    console.log('Received webhook:', JSON.stringify(payload, null, 2))
     
     // Extract event data
     const event = payload.event || payload.type
-    const userId = payload.userId || payload.user_id
-    const profileField = payload.profileField || payload.profile_field
-    const value = payload.value
-    const oldValue = payload.oldValue || payload.old_value
+    let userId = payload.userId || payload.user_id
+    let username = payload.username
+    let profileField = payload.profileField || payload.profile_field
+    let value = payload.value
+    let oldValue = payload.oldValue || payload.old_value
     
-    // Only process Job Title updates
-    if (profileField !== 'Job Title') {
-      console.log(`Skipping non-Job Title field: ${profileField}`)
+    console.log(`Event type: ${event}`)
+    
+    // Handle different event types
+    if (event === 'integration.UserRegistered') {
+      // User registration event - check if they have a job title
+      console.log('Processing user registration event')
+      
+      // Extract user data from registration payload
+      userId = userId || payload.user?.id || payload.user?.userId
+      username = username || payload.user?.username || payload.user?.displayName
+      
+      // Get job title from user object
+      const jobTitle = payload.user?.jobTitle || payload.user?.job_title || payload.jobTitle
+      
+      if (!jobTitle || jobTitle.trim() === '') {
+        console.log('Registration event without job title, skipping')
+        return new Response(
+          JSON.stringify({ status: 'skipped', reason: 'no_job_title_on_registration' }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        )
+      }
+      
+      // Set up for processing
+      profileField = 'Job Title'
+      value = jobTitle
+      oldValue = null // No old value for new users
+      
+      console.log(`New user registered: ${username} (${userId}) with title: ${value}`)
+      
+    } else if (event === 'integration.UserProfileUpdated') {
+      // Profile update event - only process Job Title changes
+      console.log('Processing profile update event')
+      
+      if (profileField !== 'Job Title') {
+        console.log(`Skipping non-Job Title field: ${profileField}`)
+        return new Response(
+          JSON.stringify({ status: 'skipped', reason: 'not_job_title' }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        )
+      }
+      
+      console.log(`Job title updated: ${username} (${userId}): "${oldValue}" → "${value}"`)
+      
+    } else {
+      // Unknown event type
+      console.log(`Unknown or unsupported event type: ${event}`)
       return new Response(
-        JSON.stringify({ status: 'skipped', reason: 'not_job_title' }),
+        JSON.stringify({ status: 'skipped', reason: 'unsupported_event_type', event }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
     }
@@ -79,7 +123,7 @@ serve(async (req) => {
       .from('events_raw')
       .insert({
         user_id: userId,
-        username: payload.username,
+        username: username,
         profile_field: profileField,
         value: value,
         old_value: oldValue,
@@ -93,7 +137,7 @@ serve(async (req) => {
       throw new Error(`Failed to store event: ${eventError.message}`)
     }
     
-    console.log(`Stored event ${eventData.id}, will be processed by background worker`)
+    console.log(`✅ Stored ${event} event (ID: ${eventData.id}) - Will be processed by background worker`)
     
     // Trigger processing via HTTP call to main Python service
     // Or queue for async processing

@@ -268,89 +268,109 @@ supabase secrets list
 
 ---
 
-### Step 7: Configure inSided Webhooks (5 minutes)
+### Step 7: Subscribe to inSided Webhooks via Postman (5 minutes)
 
-#### 7.1 Get inSided API Credentials
+The webhook handler is configured to accept **both** registration and profile update events at the **same URL**:
 
-You need three things from inSided:
-
-1. **API Token** - Your inSided API authentication token
-2. **API Secret** - Your webhook secret for signature verification
-3. **API Base URL** - Usually `https://api2-us-west-2.insided.com` (check your region)
-
-**How to get credentials:**
-1. Log into your inSided admin panel
-2. Go to **Admin** → **Settings** → **API** or **Integrations**
-3. Generate/copy your API token and secret
-4. Note your API base URL (check inSided documentation for your region)
-
-#### 7.2 Subscribe to Webhook Events
-
-inSided requires you to **subscribe via API** to webhook events. Use the provided script:
-
-**Option A: Using the subscription script (Easiest)**
-
-```bash
-# Set environment variables
-export INSIDED_API_TOKEN="your-api-token"
-export INSIDED_API_SECRET="your-api-secret"
-export SUPABASE_PROJECT_REF="your-project-ref"
-export INSIDED_API_BASE_URL="https://api2-us-west-2.insided.com"
-
-# Run subscription script
-node scripts/subscribe-webhook.js
+```
+https://YOUR_PROJECT_REF.supabase.co/functions/v1/webhook-handler
 ```
 
-**Windows (PowerShell):**
-```powershell
-$env:INSIDED_API_TOKEN="your-api-token"
-$env:INSIDED_API_SECRET="your-api-secret"
-$env:SUPABASE_PROJECT_REF="your-project-ref"
-$env:INSIDED_API_BASE_URL="https://api2-us-west-2.insided.com"
+#### 7.1 Get Your Webhook URL
 
-node scripts/subscribe-webhook.js
+Replace `YOUR_PROJECT_REF` with your actual Supabase project reference from Step 1.2.
+
+**Example:**
+```
+https://abcdefghijklmnop.supabase.co/functions/v1/webhook-handler
 ```
 
-**Option B: Manual API call using curl**
+#### 7.2 Get inSided API Credentials
 
-```bash
-curl -X POST \
-  https://api2-us-west-2.insided.com/webhooks/integration.UserProfileUpdated/subscriptions \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer YOUR_INSIDED_API_TOKEN" \
-  -d '{
-    "url": "https://YOUR_PROJECT_REF.supabase.co/functions/v1/webhook-handler",
-    "username": "YOUR_INSIDED_API_TOKEN",
-    "secret": "YOUR_INSIDED_API_SECRET"
-  }'
+From your inSided admin panel:
+1. Go to **Admin** → **Settings** → **API**
+2. Copy your **API Token** (for Authorization header)
+3. Copy your **API Secret** (for webhook payload)
+4. Note your **API Base URL** (usually `https://api2-us-west-2.insided.com`)
+
+#### 7.3 Subscribe to Events via Postman
+
+You need to subscribe to **TWO events** using the **same webhook URL**:
+
+##### **Event 1: User Registration**
+
+**Postman Setup:**
+- **Method:** `POST`
+- **URL:** `https://api2-us-west-2.insided.com/webhooks/integration.UserRegistered/subscriptions`
+- **Headers:**
+  - `Content-Type: application/json`
+  - `Authorization: Bearer YOUR_INSIDED_API_TOKEN`
+- **Body (raw JSON):**
+```json
+{
+  "url": "https://YOUR_PROJECT_REF.supabase.co/functions/v1/webhook-handler",
+  "username": "YOUR_INSIDED_API_TOKEN",
+  "secret": "YOUR_INSIDED_API_SECRET"
+}
 ```
-
-**Replace:**
-- `YOUR_INSIDED_API_TOKEN` - Your inSided API token
-- `YOUR_INSIDED_API_SECRET` - Your inSided API secret  
-- `YOUR_PROJECT_REF` - Your Supabase project reference
 
 **Expected Response:**
 ```json
 {
-  "id": "webhook-subscription-id",
-  "event": "integration.UserProfileUpdated",
-  "url": "https://your-project-ref.supabase.co/functions/v1/webhook-handler",
+  "id": "subscription-id-1",
+  "event": "integration.UserRegistered",
+  "url": "https://YOUR_PROJECT_REF.supabase.co/functions/v1/webhook-handler",
   "status": "active"
 }
 ```
 
-#### 7.3 Verify Subscription
+##### **Event 2: Profile Updates**
 
-Check that the subscription was created:
-
-```bash
-curl -X GET \
-  https://api2-us-west-2.insided.com/webhooks/integration.UserProfileUpdated/subscriptions \
-  -H "Authorization: Bearer YOUR_INSIDED_API_TOKEN"
+**Postman Setup:**
+- **Method:** `POST`
+- **URL:** `https://api2-us-west-2.insided.com/webhooks/integration.UserProfileUpdated/subscriptions`
+- **Headers:**
+  - `Content-Type: application/json`
+  - `Authorization: Bearer YOUR_INSIDED_API_TOKEN`
+- **Body (raw JSON):**
+```json
+{
+  "url": "https://YOUR_PROJECT_REF.supabase.co/functions/v1/webhook-handler",
+  "username": "YOUR_INSIDED_API_TOKEN",
+  "secret": "YOUR_INSIDED_API_SECRET"
+}
 ```
 
-You should see your Edge Function URL in the list.
+**Expected Response:**
+```json
+{
+  "id": "subscription-id-2",
+  "event": "integration.UserProfileUpdated",
+  "url": "https://YOUR_PROJECT_REF.supabase.co/functions/v1/webhook-handler",
+  "status": "active"
+}
+```
+
+#### 7.4 Verify Subscriptions
+
+**Postman Setup:**
+- **Method:** `GET`
+- **URL:** `https://api2-us-west-2.insided.com/webhooks/subscriptions` (or check specific event endpoints)
+- **Headers:**
+  - `Authorization: Bearer YOUR_INSIDED_API_TOKEN`
+
+You should see both subscriptions pointing to your webhook handler URL.
+
+#### 7.5 How Event Routing Works
+
+The **same webhook URL** handles both events intelligently:
+
+| Event Type | What Happens | Trigger |
+|------------|--------------|---------|
+| `integration.UserRegistered` | Extracts job title from registration data | New user signs up with job title |
+| `integration.UserProfileUpdated` | Processes only Job Title field changes | User updates their job title |
+
+Both events are stored in `events_raw` table and processed identically by the classification system!
 
 ---
 
@@ -538,16 +558,10 @@ supabase secrets set AA_TEAMS_BOT_ID=67890
 
 **Step 6:** Cron schedules automatically set (from config.json files)
 
-**Step 7:** Subscribe to inSided webhooks:
-```bash
-# Set credentials
-export INSIDED_API_TOKEN="your-token"
-export INSIDED_API_SECRET="your-secret"
-export SUPABASE_PROJECT_REF="your-project-ref"
-
-# Subscribe
-node scripts/subscribe-webhook.js
-```
+**Step 7:** Subscribe to inSided webhooks via Postman:
+1. ✅ Subscribe to `integration.UserRegistered` (new users)
+2. ✅ Subscribe to `integration.UserProfileUpdated` (profile changes)
+3. ✅ Both use the same URL: `https://YOUR_PROJECT_REF.supabase.co/functions/v1/webhook-handler`
 
 ### Step 8-9: Test
 ✅ Send test webhook  
