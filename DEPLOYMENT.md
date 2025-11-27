@@ -8,17 +8,19 @@
 
 ```
 inSided (Gainsight Community)
-     ↓ webhook
-Supabase Edge Functions
+     ↓ webhook (real-time)
+Supabase Edge Functions (webhook-handler)
      ↓
-PostgreSQL (classification + processing)
-     ↓ pg_cron (scheduled)
-Automation Anywhere Bots
+PostgreSQL (classification in SQL - instant)
      ↓
-Email & Teams notifications ✉️
+AA Bot Deploy API v4 (immediate notification)
+     ↓
+Email sent RIGHT AWAY ✉️
 ```
 
 **Total Cost: $0/month** (100% Free Tier!)
+
+**Processing Time: < 2 seconds** (Real-time!)
 
 ---
 
@@ -194,7 +196,7 @@ supabase functions deploy housekeeping
 
 **Your webhook URL will be:**
 ```
-https://YOUR_PROJECT_REF.supabase.co/functions/v1/webhook-handler
+https://aiepzfpaxolupbagqcdd.supabase.co/functions/v1/webhook-handler
 ```
 
 Replace `YOUR_PROJECT_REF` with your actual project reference.
@@ -268,32 +270,126 @@ supabase secrets list
 
 ---
 
-### Step 7: Configure inSided Webhooks (3 minutes)
+### Step 6: Subscribe to inSided Webhooks via Postman (5 minutes)
 
-#### 7.1 Get inSided API Key (Optional)
+The webhook handler is configured to accept **both** registration and profile update events at the **same URL**:
 
-1. Log into your inSided (Gainsight Community) admin panel
-2. Go to **Admin** → **Settings** → **API**
-3. Click **Generate API Key**
-4. Copy the key
+```
+https://YOUR_PROJECT_REF.supabase.co/functions/v1/webhook-handler
+```
 
-#### 7.2 Create Webhook in inSided
+#### 6.1 Get Your Webhook URL
 
-1. **Admin** → **Settings** → **Webhooks** or **Integrations**
-2. Click **Create New Webhook**
-3. Configure:
-   - **Name**: `CaptPathfinder Senior Exec Detection`
-   - **URL**: `https://YOUR_PROJECT_REF.supabase.co/functions/v1/webhook-handler`
-   - **Method**: `POST`
-   - **Event Type**: `integration.UserProfileUpdated`
-   - **Headers**: `Content-Type: application/json`
-4. Click **Save**
+Replace `YOUR_PROJECT_REF` with your actual Supabase project reference from Step 1.2.
+
+**Example:**
+```
+https://abcdefghijklmnop.supabase.co/functions/v1/webhook-handler
+```
+
+#### 6.2 Get inSided API Credentials
+
+From your inSided admin panel:
+1. Go to **Admin** → **Settings** → **API**
+2. Copy your **API Token** (for Authorization header)
+3. Copy your **API Secret** (for webhook payload)
+4. Note your **API Base URL** (usually `https://api2-us-west-2.insided.com`)
+
+#### 6.3 Subscribe to Events via Postman
+
+You need to subscribe to **TWO events** using the **same webhook URL**:
+
+##### **Event 1: User Registration**
+
+**Postman Setup:**
+- **Method:** `POST`
+- **URL:** `https://api2-us-west-2.insided.com/webhooks/integration.UserRegistered/subscriptions`
+- **Headers:**
+  - `Content-Type: application/json`
+  - `Authorization: Bearer YOUR_INSIDED_API_TOKEN`
+- **Body (raw JSON):**
+```json
+{
+  "url": "https://YOUR_PROJECT_REF.supabase.co/functions/v1/webhook-handler",
+  "username": "YOUR_INSIDED_API_TOKEN",
+  "secret": "YOUR_INSIDED_API_SECRET"
+}
+```
+
+**Expected Response:**
+```json
+{
+  "id": "subscription-id-1",
+  "event": "integration.UserRegistered",
+  "url": "https://YOUR_PROJECT_REF.supabase.co/functions/v1/webhook-handler",
+  "status": "active"
+}
+```
+
+##### **Event 2: Profile Updates**
+
+**Postman Setup:**
+- **Method:** `POST`
+- **URL:** `https://api2-us-west-2.insided.com/webhooks/integration.UserProfileUpdated/subscriptions`
+- **Headers:**
+  - `Content-Type: application/json`
+  - `Authorization: Bearer YOUR_INSIDED_API_TOKEN`
+- **Body (raw JSON):**
+```json
+{
+  "url": "https://YOUR_PROJECT_REF.supabase.co/functions/v1/webhook-handler",
+  "username": "YOUR_INSIDED_API_TOKEN",
+  "secret": "YOUR_INSIDED_API_SECRET"
+}
+```
+
+**Expected Response:**
+```json
+{
+  "id": "subscription-id-2",
+  "event": "integration.UserProfileUpdated",
+  "url": "https://YOUR_PROJECT_REF.supabase.co/functions/v1/webhook-handler",
+  "status": "active"
+}
+```
+
+#### 6.4 Verify Subscriptions
+
+**Postman Setup:**
+- **Method:** `GET`
+- **URL:** `https://api2-us-west-2.insided.com/webhooks/subscriptions` (or check specific event endpoints)
+- **Headers:**
+  - `Authorization: Bearer YOUR_INSIDED_API_TOKEN`
+
+You should see both subscriptions pointing to your webhook handler URL.
+
+#### 6.5 How Real-Time Processing Works
+
+The **same webhook URL** handles both events and processes them **immediately**:
+
+| Event Type | What Happens | Latency |
+|------------|--------------|---------|
+| `integration.UserRegistered` | Extract job title → Classify → If senior → Send email | < 2 seconds |
+| `integration.UserProfileUpdated` | Extract job title → Classify → If senior → Send email | < 2 seconds |
+
+**Flow:**
+1. Webhook received
+2. Event stored in `events_raw`
+3. **Classification runs immediately** (SQL function)
+4. If senior executive detected:
+   - Update `user_state` table
+   - Create `detections` record
+   - **Deploy AA email bot RIGHT NOW**
+   - Email sent instantly
+5. If not senior: Event marked as processed, no notification
+
+**No waiting, no batching, no cron jobs!** ⚡
 
 ---
 
-### Step 8: Test the System (5 minutes)
+### Step 7: Test Real-Time Detection (5 minutes)
 
-#### 8.1 Test Webhook Receipt
+#### 7.1 Test Webhook Receipt & Immediate Processing
 
 ```bash
 # Replace YOUR_PROJECT_REF with your actual project ref
@@ -310,80 +406,78 @@ curl -X POST \
   }'
 ```
 
-**Expected Response:**
+**Expected Response (Senior Executive):**
 ```json
-{"status":"accepted","event_id":1}
+{
+  "status":"accepted",
+  "event_id":1,
+  "classification":"senior",
+  "seniority_level":"csuite",
+  "notification":"sent"
+}
 ```
 
-#### 8.2 Check Event Stored
+**Expected Response (Not Senior):**
+```json
+{
+  "status":"accepted",
+  "event_id":1,
+  "classification":"not_senior"
+}
+```
+
+✅ **If senior: Email should be sent within 2 seconds!**
+
+#### 7.2 Check Detection in Database
 
 **In Supabase SQL Editor:**
 ```sql
+-- Check if event was stored and processed
 SELECT * FROM events_raw ORDER BY received_at DESC LIMIT 5;
-```
 
-**Or via psql:**
-```bash
-psql $SUPABASE_DB_URL -c "SELECT * FROM events_raw ORDER BY received_at DESC LIMIT 5;"
-```
-
-You should see your test event.
-
-#### 8.3 Wait 1 Minute (Edge Function processes events)
-
-The `process-events` Edge Function runs every minute automatically.
-
-After 1 minute, check in **Supabase SQL Editor**:
-
-```sql
--- Check if event was processed
-SELECT * FROM events_raw WHERE processed = TRUE;
-
--- Check if detection was created
+-- Check if detection was created (for senior execs only)
 SELECT * FROM detections ORDER BY detected_at DESC LIMIT 5;
 
--- Check user_state
+-- Check user_state (senior execs only)
 SELECT * FROM user_state;
 ```
 
 You should see:
-- Event marked as `processed = TRUE`
-- Detection record created
-- User in `user_state` table with `seniority_level = 'csuite'`
+- Event in `events_raw` with `processed = TRUE`
+- Detection record created (if senior)
+- User in `user_state` table (if senior)
 
-#### 8.4 Test Classification
+#### 7.3 Check AA Control Room
 
-**In Supabase SQL Editor:**
+1. Log into your AA Control Room
+2. Go to **Activity** → **In Progress** (or **Activity Log**)
+3. You should see the bot deployment within seconds
+4. Check the bot execution status
 
-```sql
--- Test SQL classification function
-SELECT * FROM classify_job_title('CEO');
--- Expected: is_senior = t, seniority_level = csuite
+**Check your email!** You should receive the notification email instantly.
 
-SELECT * FROM classify_job_title('VP of Sales');
--- Expected: is_senior = t, seniority_level = vp
-
-SELECT * FROM classify_job_title('Software Engineer');
--- Expected: is_senior = f, seniority_level = (empty)
-```
-
-#### 8.5 Test Digest Sending
+#### 7.4 Check Edge Function Logs
 
 ```bash
-# Manually trigger digest send
-curl -X POST \
-  https://YOUR_PROJECT_REF.supabase.co/functions/v1/send-digests
-```
+# View webhook handler logs
+supabase functions logs webhook-handler
 
-**Check Edge Function logs:**
-```bash
-supabase functions logs send-digests
+# View notification logs
+supabase functions logs send-notification
 ```
 
 Look for:
-- "Authenticating with AA Control Room..."
-- "Sending email digest..."
-- "Email Bot deployed successfully"
+- "SENIOR EXECUTIVE DETECTED"
+- "Notification sent successfully"
+- "Bot deployed successfully"
+
+#### 7.5 Test with Real inSided User
+
+1. Log into inSided as a test user (or create a new user)
+2. Update your **Job Title** to: `Chief Technology Officer`
+3. Save the profile
+4. **Check your email inbox within 30 seconds** - you should receive the alert!
+5. Check Supabase SQL Editor to verify detection was recorded
 
 ---
 
@@ -472,8 +566,13 @@ supabase secrets set AA_TEAMS_BOT_ID=67890
 ```
 
 ### Step 6-7: Configure Webhooks
-1. ✅ Cron schedules automatically set (from config.json files)
-2. ✅ Setup inSided webhook: `https://YOUR_PROJECT_REF.supabase.co/functions/v1/webhook-handler`
+
+**Step 6:** Cron schedules automatically set (from config.json files)
+
+**Step 7:** Subscribe to inSided webhooks via Postman:
+1. ✅ Subscribe to `integration.UserRegistered` (new users)
+2. ✅ Subscribe to `integration.UserProfileUpdated` (profile changes)
+3. ✅ Both use the same URL: `https://YOUR_PROJECT_REF.supabase.co/functions/v1/webhook-handler`
 
 ### Step 8-9: Test
 ✅ Send test webhook  
