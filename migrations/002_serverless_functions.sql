@@ -4,6 +4,9 @@
 -- This replaces the Python classification logic with pure SQL/plpgsql
 -- Runs directly in the database for maximum performance
 
+-- First, ensure pg_cron extension is enabled
+CREATE EXTENSION IF NOT EXISTS pg_cron;
+
 CREATE OR REPLACE FUNCTION classify_job_title(title TEXT)
 RETURNS TABLE(is_senior BOOLEAN, seniority_level TEXT) AS $$
 DECLARE
