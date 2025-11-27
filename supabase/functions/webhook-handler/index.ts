@@ -1,12 +1,12 @@
-"""
-Supabase Edge Function for CaptPathfinder Webhook Handler
-==========================================================
-
-This Edge Function receives webhooks from inSided (Gainsight Community)
-and processes senior executive detections.
-
-Deploy to Supabase: supabase functions deploy webhook-handler
-"""
+/**
+ * Supabase Edge Function for CaptPathfinder Webhook Handler
+ * ==========================================================
+ * 
+ * This Edge Function receives webhooks from inSided (Gainsight Community)
+ * and processes senior executive detections.
+ * 
+ * Deploy to Supabase: supabase functions deploy webhook-handler
+ */
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
