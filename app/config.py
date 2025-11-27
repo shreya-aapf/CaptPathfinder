@@ -15,14 +15,13 @@ class Settings(BaseSettings):
     
     # Automation Anywhere Integration
     aa_control_room_url: str
-    aa_api_key: str
+    aa_username: str  # Required for authentication
+    aa_api_key: str   # Required for authentication
     aa_email_bot_id: str
     aa_teams_bot_id: str
-    aa_run_as_user_id: str
     
-    # Optional: Username/Password auth (API key recommended)
-    aa_username: Optional[str] = None
-    aa_password: Optional[str] = None
+    # Optional: Override auth endpoint if using different instance
+    aa_auth_endpoint: Optional[str] = "https://automationanywhere-be-prod.automationanywhere.com/v2/authentication"
     
     # Community Platform API
     community_api_url: Optional[str] = None

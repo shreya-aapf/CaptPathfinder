@@ -169,15 +169,16 @@ postgresql://postgres.xyzabcdefgh:password@aws-0-us-east-1.pooler.supabase.com:6
 # Control Room URL
 AA_CONTROL_ROOM_URL=https://your-instance.automationanywhere.digital
 
-# Authentication - API Key (recommended)
+# Authentication Credentials
+AA_USERNAME=your-username
 AA_API_KEY=your-api-key-here
 
-# Bot File IDs (from Control Room)
-AA_EMAIL_BOT_ID=12345678-1234-1234-1234-123456789abc
-AA_TEAMS_BOT_ID=87654321-4321-4321-4321-cba987654321
+# Bot IDs (found in Control Room)
+AA_EMAIL_BOT_ID=12345
+AA_TEAMS_BOT_ID=67890
 
-# User ID to run bots as
-AA_RUN_AS_USER_ID=your-user-id-here
+# Optional: Override auth endpoint (default uses production endpoint)
+# AA_AUTH_ENDPOINT=https://your-instance.automationanywhere.com/v2/authentication
 ```
 
 #### Finding Bot IDs (File IDs)
@@ -185,30 +186,28 @@ AA_RUN_AS_USER_ID=your-user-id-here
 **In Control Room:**
 1. Navigate to **Automation** tab
 2. Find your bot in the list
-3. Right-click → **Properties**
-4. Copy the **File ID** (this is your Bot ID)
+3. Note the **Bot ID** (numeric ID in the URL or bot properties)
 
-**Example File ID:** `a1b2c3d4-1234-5678-90ab-cdef12345678`
+**Example Bot ID:** `12345` (numeric) or `a1b2c3d4-1234-5678-90ab-cdef12345678` (file ID)
 
 #### Finding Your User ID
 
-**In Control Room:**
-1. Go to **Administration** → **Users**
-2. Click on your username
-3. Copy the User ID from URL or details panel
+Your Control Room username is what you use to log in to the AA Control Room.
+
+**Where to find it:**
+1. Check your login credentials
+2. Or go to **My Settings** in Control Room
+3. Your username is displayed at the top
 
 #### Getting API Key
 
-**Option A: Generate API Key (Recommended)**
+**Generate API Key in Control Room:**
 1. Control Room → **My Settings** → **My Credentials**
 2. Click **Generate API Key**
-3. Copy immediately (won't be shown again)
+3. Copy the key immediately (won't be shown again)
+4. Use this key in `AA_API_KEY`
 
-**Option B: Username/Password**
-```bash
-AA_USERNAME=your-username
-AA_PASSWORD=your-password
-```
+**Note:** The system will use username + API key to authenticate via the [Authentication API v2](https://docs.automationanywhere.com/bundle/enterprise-v2019/page/auth-api-supported-v2.html) and get a session token.
 
 ### Optional Configuration
 
@@ -235,10 +234,10 @@ Your `.env` file only needs:
 ```bash
 SUPABASE_DB_URL=<copied-from-supabase>
 AA_CONTROL_ROOM_URL=https://your-instance.automationanywhere.digital
+AA_USERNAME=your-username
 AA_API_KEY=your-api-key
-AA_EMAIL_BOT_ID=your-bot-id
-AA_TEAMS_BOT_ID=your-bot-id
-AA_RUN_AS_USER_ID=your-user-id
+AA_EMAIL_BOT_ID=12345
+AA_TEAMS_BOT_ID=67890
 ```
 
 Everything else has sensible defaults!
@@ -826,29 +825,41 @@ X-Admin-Token: your-secret-token
 
 ### Overview
 
-CaptPathfinder deploys AA bots using the Bot Deploy API v4. Bots receive input variables and execute to send emails or Teams messages.
+CaptPathfinder deploys AA bots using proper authentication flow:
 
-**API Documentation:** https://docs.automationanywhere.com/bundle/enterprise-v2019/page/deploy-api-supported-v4.html
+1. **Authenticates** with [Authentication API v2](https://docs.automationanywhere.com/bundle/enterprise-v2019/page/auth-api-supported-v2.html)
+   - POST to `/v2/authentication`
+   - Payload: `{username, apiKey, multipleLogin: false}`
+   - Returns: Authentication token
+
+2. **Deploys Bot** with Deploy API v3
+   - POST to `/v3/automations/deploy`  
+   - Header: `X-Authorization: <token-from-step-1>`
+   - Payload: Bot ID + input variables
+
+3. **Bot Executes** with provided input variables
+
+**API Documentation:** 
+- Auth: https://docs.automationanywhere.com/bundle/enterprise-v2019/page/auth-api-supported-v2.html
+- Deploy: https://docs.automationanywhere.com/bundle/enterprise-v2019/page/deploy-api-supported-v4.html
 
 ### How It Works
 
 ```
 CaptPathfinder
     ↓
-POST /v4/automations/deploy
+1. POST /v2/authentication
+   {username, apiKey, multipleLogin: false}
     ↓
-{
-  "fileId": "bot-id",
-  "runAsUserIds": ["user-id"],
-  "botInput": [
-    {"name": "emailTo", "value": "email@example.com"},
-    {"name": "emailSubject", "value": "Subject"}
-  ]
-}
+Receives auth token
+    ↓
+2. POST /v3/automations/deploy
+   Header: X-Authorization: <token>
+   {botId, botInput, automationName, ...}
     ↓
 Bot executes with input variables
     ↓
-Email/Teams message sent
+Sends email/Teams message
 ```
 
 ### Creating Your Bots

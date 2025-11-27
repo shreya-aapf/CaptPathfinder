@@ -22,26 +22,73 @@ class AutomationAnywhereClient:
     """
     Client for deploying Automation Anywhere bots via Control Room API v4.
     
-    Uses the Bot Deploy API to execute bots with input variables.
+    Uses Authentication API v2 to get token, then deploys bots with input variables.
+    
+    Auth API: https://docs.automationanywhere.com/bundle/enterprise-v2019/page/auth-api-supported-v2.html
+    Deploy API: https://docs.automationanywhere.com/bundle/enterprise-v2019/page/deploy-api-supported-v4.html
     """
     
     def __init__(self):
         """Initialize AA client with Control Room configuration."""
         self.settings = get_settings()
         self.control_room_url = self.settings.aa_control_room_url.rstrip('/')
+        self.username = self.settings.aa_username
         self.api_key = self.settings.aa_api_key
         self.email_bot_id = self.settings.aa_email_bot_id
         self.teams_bot_id = self.settings.aa_teams_bot_id
-        self.run_as_user_id = self.settings.aa_run_as_user_id
+        self.auth_endpoint = self.settings.aa_auth_endpoint
         
         # API endpoints
-        self.deploy_endpoint = f"{self.control_room_url}/v4/automations/deploy"
+        self.deploy_endpoint = f"{self.control_room_url}/v3/automations/deploy"
         
-        # Authentication headers
+        # Token will be set after authentication
+        self.auth_token = None
         self.headers = {
-            "X-Authorization": self.api_key,
             "Content-Type": "application/json"
         }
+    
+    async def _authenticate(self) -> str:
+        """
+        Authenticate with AA Control Room to get access token.
+        
+        Uses Authentication API v2: 
+        https://docs.automationanywhere.com/bundle/enterprise-v2019/page/auth-api-supported-v2.html
+        
+        Returns:
+            Authentication token for use in X-Authorization header
+        """
+        auth_payload = {
+            "username": self.username,
+            "apiKey": self.api_key,
+            "multipleLogin": False  # Set to True if you need multiple concurrent sessions
+        }
+        
+        logger.info(f"Authenticating user {self.username} with AA Control Room")
+        
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                self.auth_endpoint,
+                json=auth_payload,
+                headers={"Content-Type": "application/json"},
+                timeout=30.0
+            )
+            
+            response.raise_for_status()
+            result = response.json()
+            
+            # Extract token from response
+            token = result.get("token")
+            if not token:
+                raise ValueError("Authentication response did not contain token")
+            
+            logger.info("Successfully authenticated with AA Control Room")
+            return token
+    
+    async def _ensure_authenticated(self):
+        """Ensure we have a valid authentication token."""
+        if not self.auth_token:
+            self.auth_token = await self._authenticate()
+            self.headers["X-Authorization"] = self.auth_token
     
     def _prepare_email_bot_inputs(self, digest: DigestPayload) -> Dict[str, Any]:
         """
@@ -170,34 +217,39 @@ class AutomationAnywhereClient:
         bot_name: str = "Bot"
     ) -> Dict[str, Any]:
         """
-        Deploy an Automation Anywhere bot using the Bot Deploy API v4.
+        Deploy an Automation Anywhere bot using the Bot Deploy API v3.
         
         API Reference: https://docs.automationanywhere.com/bundle/enterprise-v2019/page/deploy-api-supported-v4.html
         
         Args:
-            bot_id: The file ID of the bot in Control Room
+            bot_id: The file ID/bot ID of the bot in Control Room
             bot_inputs: Dictionary of input variable names and values
             bot_name: Name for logging purposes
             
         Returns:
             API response with deployment ID and status
         """
-        # Convert bot inputs to AA API format
-        # Input variables must be provided as key-value pairs
-        input_variables = []
-        for key, value in bot_inputs.items():
-            input_variables.append({
-                "name": key,
-                "value": value
-            })
+        # Ensure we're authenticated
+        await self._ensure_authenticated()
         
-        # Build deployment request payload
+        # Convert bot inputs to AA API format
+        # Input variables as nested dictionary structure
+        formatted_inputs = {}
+        for key, value in bot_inputs.items():
+            formatted_inputs[key] = {
+                "type": "STRING",
+                "string": value
+            }
+        
+        # Build deployment request payload based on AA API v3 structure
         payload = {
-            "fileId": bot_id,
-            "runAsUserIds": [self.run_as_user_id],
-            "botInput": input_variables,
-            "poolIds": [],  # Optional: specify device pool IDs
-            "overrideDefaultDevice": False
+            "botId": int(bot_id) if bot_id.isdigit() else bot_id,  # Can be int or string fileId
+            "automationName": bot_name,
+            "description": f"Deployed by CaptPathfinder - {bot_name}",
+            "botInput": formatted_inputs,
+            "automationPriority": "PRIORITY_MEDIUM",
+            "runElevated": False,
+            "hideBotAgentUi": False
         }
         
         logger.info(f"Deploying {bot_name} (Bot ID: {bot_id})")
@@ -214,7 +266,8 @@ class AutomationAnywhereClient:
             response.raise_for_status()
             result = response.json()
             
-            logger.info(f"{bot_name} deployed successfully. Deployment ID: {result.get('deploymentId')}")
+            deployment_id = result.get('deploymentId') or result.get('automationId')
+            logger.info(f"{bot_name} deployed successfully. Deployment ID: {deployment_id}")
             return result
     
     async def send_email_digest(self, digest: DigestPayload) -> bool:
