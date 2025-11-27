@@ -14,10 +14,15 @@ class Settings(BaseSettings):
     supabase_db_url: str
     
     # Automation Anywhere Integration
-    aa_email_bot_url: str
-    aa_email_bot_api_key: str
-    aa_teams_bot_url: str
-    aa_teams_bot_api_key: str
+    aa_control_room_url: str
+    aa_api_key: str
+    aa_email_bot_id: str
+    aa_teams_bot_id: str
+    aa_run_as_user_id: str
+    
+    # Optional: Username/Password auth (API key recommended)
+    aa_username: Optional[str] = None
+    aa_password: Optional[str] = None
     
     # Community Platform API
     community_api_url: Optional[str] = None

@@ -1,12 +1,15 @@
 """
 Automation Anywhere Integration
 ================================
-Provides integration with AA bots for sending emails and Teams messages.
+Integrates with Automation Anywhere Control Room using Bot Deploy API v4.
+Deploys bots with input variables for email and Teams notifications.
+
+API Documentation: https://docs.automationanywhere.com/bundle/enterprise-v2019/page/deploy-api-supported-v4.html
 """
 
 import httpx
 import logging
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 from tenacity import retry, stop_after_attempt, wait_exponential
 
 from ..config import get_settings
@@ -16,31 +19,76 @@ logger = logging.getLogger(__name__)
 
 
 class AutomationAnywhereClient:
-    """Client for interacting with Automation Anywhere bots."""
+    """
+    Client for deploying Automation Anywhere bots via Control Room API v4.
+    
+    Uses the Bot Deploy API to execute bots with input variables.
+    """
     
     def __init__(self):
-        """Initialize AA client."""
+        """Initialize AA client with Control Room configuration."""
         self.settings = get_settings()
-        self.email_bot_url = self.settings.aa_email_bot_url
-        self.email_bot_api_key = self.settings.aa_email_bot_api_key
-        self.teams_bot_url = self.settings.aa_teams_bot_url
-        self.teams_bot_api_key = self.settings.aa_teams_bot_api_key
-    
-    def _format_digest_for_email(self, digest: DigestPayload) -> Dict[str, Any]:
-        """
-        Format digest payload for email bot.
+        self.control_room_url = self.settings.aa_control_room_url.rstrip('/')
+        self.api_key = self.settings.aa_api_key
+        self.email_bot_id = self.settings.aa_email_bot_id
+        self.teams_bot_id = self.settings.aa_teams_bot_id
+        self.run_as_user_id = self.settings.aa_run_as_user_id
         
-        Customize this based on your AA email bot's expected input format.
+        # API endpoints
+        self.deploy_endpoint = f"{self.control_room_url}/v4/automations/deploy"
+        
+        # Authentication headers
+        self.headers = {
+            "X-Authorization": self.api_key,
+            "Content-Type": "application/json"
+        }
+    
+    def _prepare_email_bot_inputs(self, digest: DigestPayload) -> Dict[str, Any]:
         """
-        # Build HTML email body
-        html_body = f"""
+        Prepare input variables for email bot.
+        
+        These variables will be passed to your AA bot as input values.
+        Customize based on your bot's input variable names.
+        """
+        # Build email body HTML
+        html_body = self._build_email_html(digest)
+        
+        # Prepare bot input variables
+        # IMPORTANT: Variable names must match your bot's input variable names
+        bot_inputs = {
+            "emailTo": "stakeholder1@company.com;stakeholder2@company.com",  # Semicolon-separated
+            "emailSubject": f"Weekly Senior Executive Digest: {digest.week_start} - {digest.week_end}",
+            "emailBody": html_body,
+            "isHTML": "true",  # String value for boolean
+            "weekStart": digest.week_start,
+            "weekEnd": digest.week_end,
+            "totalCount": str(digest.total_count)  # Convert to string
+        }
+        
+        return bot_inputs
+    
+    def _build_email_html(self, digest: DigestPayload) -> str:
+        """Build HTML email body."""
+        html = f"""
         <html>
+        <head>
+            <style>
+                body {{ font-family: Arial, sans-serif; }}
+                table {{ border-collapse: collapse; width: 100%; }}
+                th {{ background-color: #007bff; color: white; padding: 12px; text-align: left; }}
+                td {{ padding: 10px; border-bottom: 1px solid #ddd; }}
+                tr:hover {{ background-color: #f8f9fa; }}
+                .header {{ background-color: #007bff; color: white; padding: 20px; }}
+            </style>
+        </head>
         <body>
-            <h2>Weekly Senior Executive Detections</h2>
-            <p>Period: {digest.week_start} to {digest.week_end}</p>
-            <p>Total detections: {digest.total_count}</p>
+            <div class="header">
+                <h2>Weekly Senior Executive Detections</h2>
+            </div>
+            <p><strong>Period:</strong> {digest.week_start} to {digest.week_end}</p>
+            <p><strong>Total detections:</strong> {digest.total_count}</p>
             
-            <table border="1" cellpadding="5" cellspacing="0">
+            <table>
                 <thead>
                     <tr>
                         <th>Name</th>
@@ -55,7 +103,7 @@ class AutomationAnywhereClient:
         """
         
         for user in digest.users:
-            html_body += f"""
+            html += f"""
                     <tr>
                         <td>{user.username}</td>
                         <td>{user.title}</td>
@@ -66,30 +114,24 @@ class AutomationAnywhereClient:
                     </tr>
             """
         
-        html_body += """
+        html += """
                 </tbody>
             </table>
         </body>
         </html>
         """
         
-        # Format for AA email bot
-        return {
-            "to": ["stakeholder1@company.com", "stakeholder2@company.com"],
-            "subject": f"Weekly Senior Executive Digest: {digest.week_start} - {digest.week_end}",
-            "body": html_body,
-            "is_html": True
-        }
+        return html
     
-    def _format_digest_for_teams(self, digest: DigestPayload) -> Dict[str, Any]:
+    def _prepare_teams_bot_inputs(self, digest: DigestPayload) -> Dict[str, Any]:
         """
-        Format digest payload for Teams bot.
+        Prepare input variables for Teams bot.
         
-        Customize this based on your AA Teams bot's expected input format.
+        These variables will be passed to your AA bot as input values.
+        Customize based on your bot's input variable names.
         """
-        # Build adaptive card or simple message
-        message_text = f"""
-**Weekly Senior Executive Detections**
+        # Build Teams message text (markdown format)
+        message_text = f"""**Weekly Senior Executive Detections**
 
 **Period:** {digest.week_start} to {digest.week_end}  
 **Total detections:** {digest.total_count}
@@ -104,42 +146,80 @@ class AutomationAnywhereClient:
 
 """
         
-        # Format for AA Teams bot
-        return {
-            "channel_url": "https://teams.microsoft.com/l/channel/...",  # Configure this
-            "message": message_text,
-            "message_type": "markdown"
+        # Prepare bot input variables
+        # IMPORTANT: Variable names must match your bot's input variable names
+        bot_inputs = {
+            "teamsChannelWebhook": "https://outlook.office.com/webhook/your-webhook-url",  # Configure this
+            "messageText": message_text,
+            "messageType": "markdown",
+            "weekStart": digest.week_start,
+            "weekEnd": digest.week_end,
+            "totalCount": str(digest.total_count)
         }
+        
+        return bot_inputs
     
     @retry(
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=1, min=2, max=10)
     )
-    async def _send_request(
+    async def _deploy_bot(
         self,
-        url: str,
-        api_key: str,
-        payload: Dict[str, Any]
+        bot_id: str,
+        bot_inputs: Dict[str, Any],
+        bot_name: str = "Bot"
     ) -> Dict[str, Any]:
         """
-        Send HTTP request to AA bot with retry logic.
+        Deploy an Automation Anywhere bot using the Bot Deploy API v4.
+        
+        API Reference: https://docs.automationanywhere.com/bundle/enterprise-v2019/page/deploy-api-supported-v4.html
+        
+        Args:
+            bot_id: The file ID of the bot in Control Room
+            bot_inputs: Dictionary of input variable names and values
+            bot_name: Name for logging purposes
+            
+        Returns:
+            API response with deployment ID and status
         """
+        # Convert bot inputs to AA API format
+        # Input variables must be provided as key-value pairs
+        input_variables = []
+        for key, value in bot_inputs.items():
+            input_variables.append({
+                "name": key,
+                "value": value
+            })
+        
+        # Build deployment request payload
+        payload = {
+            "fileId": bot_id,
+            "runAsUserIds": [self.run_as_user_id],
+            "botInput": input_variables,
+            "poolIds": [],  # Optional: specify device pool IDs
+            "overrideDefaultDevice": False
+        }
+        
+        logger.info(f"Deploying {bot_name} (Bot ID: {bot_id})")
+        logger.debug(f"Deployment payload: {payload}")
+        
         async with httpx.AsyncClient() as client:
             response = await client.post(
-                url,
+                self.deploy_endpoint,
                 json=payload,
-                headers={
-                    "Authorization": f"Bearer {api_key}",
-                    "Content-Type": "application/json"
-                },
+                headers=self.headers,
                 timeout=30.0
             )
+            
             response.raise_for_status()
-            return response.json()
+            result = response.json()
+            
+            logger.info(f"{bot_name} deployed successfully. Deployment ID: {result.get('deploymentId')}")
+            return result
     
     async def send_email_digest(self, digest: DigestPayload) -> bool:
         """
-        Send digest via email through AA bot.
+        Send digest via email by deploying the email bot.
         
         Returns True if successful, False otherwise.
         """
@@ -148,11 +228,14 @@ class AutomationAnywhereClient:
                 f"Sending email digest for week {digest.week_start} - {digest.week_end}"
             )
             
-            payload = self._format_digest_for_email(digest)
-            result = await self._send_request(
-                self.email_bot_url,
-                self.email_bot_api_key,
-                payload
+            # Prepare bot input variables
+            bot_inputs = self._prepare_email_bot_inputs(digest)
+            
+            # Deploy the email bot
+            result = await self._deploy_bot(
+                bot_id=self.email_bot_id,
+                bot_inputs=bot_inputs,
+                bot_name="Email Bot"
             )
             
             logger.info(f"Email digest sent successfully: {result}")
@@ -164,7 +247,7 @@ class AutomationAnywhereClient:
     
     async def send_teams_digest(self, digest: DigestPayload) -> bool:
         """
-        Send digest to Teams through AA bot.
+        Send digest to Teams by deploying the Teams bot.
         
         Returns True if successful, False otherwise.
         """
@@ -173,11 +256,14 @@ class AutomationAnywhereClient:
                 f"Sending Teams digest for week {digest.week_start} - {digest.week_end}"
             )
             
-            payload = self._format_digest_for_teams(digest)
-            result = await self._send_request(
-                self.teams_bot_url,
-                self.teams_bot_api_key,
-                payload
+            # Prepare bot input variables
+            bot_inputs = self._prepare_teams_bot_inputs(digest)
+            
+            # Deploy the Teams bot
+            result = await self._deploy_bot(
+                bot_id=self.teams_bot_id,
+                bot_inputs=bot_inputs,
+                bot_name="Teams Bot"
             )
             
             logger.info(f"Teams digest sent successfully: {result}")

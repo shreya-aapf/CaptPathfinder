@@ -38,10 +38,21 @@ postgresql://postgres.xyzabcdefgh:password@aws-0-us-east-1.pooler.supabase.com:6
 SUPABASE_DB_URL=<paste-connection-string-from-supabase>
 
 # Automation Anywhere Integration (Required)
-AA_EMAIL_BOT_URL=https://your-aa-instance.com/api/v1/email/send
-AA_EMAIL_BOT_API_KEY=your-api-key-here
-AA_TEAMS_BOT_URL=https://your-aa-instance.com/api/v1/teams/send
-AA_TEAMS_BOT_API_KEY=your-api-key-here
+# Control Room URL - your AA instance
+AA_CONTROL_ROOM_URL=https://your-instance.automationanywhere.digital
+
+# Authentication - use API key or OAuth token
+AA_API_KEY=your-api-key-here
+# OR use username/password (API key recommended)
+AA_USERNAME=your-username
+AA_PASSWORD=your-password
+
+# Bot IDs - found in Control Room (Automation > Right-click bot > Properties)
+AA_EMAIL_BOT_ID=12345678-1234-1234-1234-123456789abc
+AA_TEAMS_BOT_ID=87654321-4321-4321-4321-cba987654321
+
+# Bot Runner User ID (the user account that will run the bot)
+AA_RUN_AS_USER_ID=your-user-id-here
 
 # Application Settings (Optional - defaults provided)
 API_HOST=0.0.0.0
@@ -80,39 +91,59 @@ touch .env  # Mac/Linux
 Open `.env` and add:
 ```bash
 SUPABASE_DB_URL=<paste-here>
-AA_EMAIL_BOT_URL=https://your-aa-url.com/email
-AA_EMAIL_BOT_API_KEY=your-key
-AA_TEAMS_BOT_URL=https://your-aa-url.com/teams
-AA_TEAMS_BOT_API_KEY=your-key
+
+# Automation Anywhere
+AA_CONTROL_ROOM_URL=https://your-instance.automationanywhere.digital
+AA_API_KEY=your-api-key
+AA_EMAIL_BOT_ID=your-email-bot-file-id
+AA_TEAMS_BOT_ID=your-teams-bot-file-id
+AA_RUN_AS_USER_ID=your-user-id
 ```
+
+### Step 4: Get Automation Anywhere Bot IDs
+
+**Finding Bot IDs (File IDs) in Control Room:**
+1. Log into your AA Control Room
+2. Go to **Automation** tab
+3. Find your email/Teams bot
+4. Right-click the bot → **Properties**
+5. Copy the **File ID** (looks like: `12345678-1234-1234-1234-123456789abc`)
+
+**Finding your User ID:**
+1. Control Room → **Administration** → **Users**
+2. Click on your username
+3. Copy the **User ID** from the URL or user details
+
+**Getting API Key:**
+1. Control Room → **Administration** → **Settings** → **Credentials**
+2. Or use username/password authentication (API key recommended)
 
 ### Visual Guide:
 ```
-Supabase Dashboard
+AA Control Room
     ↓
-Settings (⚙️ in sidebar)
+Automation tab
     ↓
-Database
+Right-click bot → Properties
     ↓
-Connection String section
+Copy File ID (Bot ID) 📋
     ↓
-URI tab
-    ↓
-Copy button 📋
-    ↓
-Paste into .env ✅
+Paste into .env as AA_EMAIL_BOT_ID ✅
 ```
 
 ## Minimal Working Configuration
 
-Your `.env` file only needs these 5 lines:
+Your `.env` file only needs these lines:
 
 ```bash
 SUPABASE_DB_URL=<copied-from-supabase-dashboard>
-AA_EMAIL_BOT_URL=https://your-aa-bot-url.com/email
-AA_EMAIL_BOT_API_KEY=your-key
-AA_TEAMS_BOT_URL=https://your-aa-bot-url.com/teams
-AA_TEAMS_BOT_API_KEY=your-key
+
+# Automation Anywhere
+AA_CONTROL_ROOM_URL=https://your-instance.automationanywhere.digital
+AA_API_KEY=your-api-key-here
+AA_EMAIL_BOT_ID=your-email-bot-id
+AA_TEAMS_BOT_ID=your-teams-bot-id
+AA_RUN_AS_USER_ID=your-user-id
 ```
 
 Everything else has sensible defaults!
