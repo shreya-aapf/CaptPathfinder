@@ -137,26 +137,137 @@ serve(async (req) => {
       throw new Error(`Failed to store event: ${eventError.message}`)
     }
     
-    console.log(`✅ Stored ${event} event (ID: ${eventData.id}) - Will be processed by background worker`)
+    console.log(`✅ Stored ${event} event (ID: ${eventData.id})`)
     
-    // Trigger processing via HTTP call to main Python service
-    // Or queue for async processing
-    const pythonServiceUrl = Deno.env.get('PYTHON_SERVICE_URL')
-    if (pythonServiceUrl) {
-      // Call Python service to process event
-      await fetch(`${pythonServiceUrl}/process-event/${eventData.id}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' }
-      })
+    // ============================================
+    // REAL-TIME PROCESSING: Classify & Notify Immediately
+    // ============================================
+    
+    // Call classification function
+    const { data: classificationResult, error: classError } = await supabase
+      .rpc('classify_job_title', { title: value })
+    
+    if (classError) {
+      console.error('Classification error:', classError)
+      throw new Error(`Classification failed: ${classError.message}`)
     }
     
-    return new Response(
-      JSON.stringify({ 
-        status: 'accepted',
-        event_id: eventData.id 
-      }),
-      { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-    )
+    console.log(`Classification result: is_senior=${classificationResult[0].is_senior}, level=${classificationResult[0].seniority_level}`)
+    
+    // If this is a senior executive, process immediately
+    if (classificationResult[0].is_senior) {
+      const seniorityLevel = classificationResult[0].seniority_level
+      
+      console.log(`🎯 SENIOR EXECUTIVE DETECTED: ${username} - ${value} (${seniorityLevel})`)
+      
+      // Update user_state
+      const { error: upsertError } = await supabase
+        .from('user_state')
+        .upsert({
+          user_id: userId,
+          username: username,
+          title: value,
+          seniority_level: seniorityLevel,
+          first_detected_at: new Date().toISOString(),
+          last_seen_at: new Date().toISOString()
+        }, {
+          onConflict: 'user_id'
+        })
+      
+      if (upsertError) {
+        console.error('Error updating user_state:', upsertError)
+      }
+      
+      // Create detection record
+      const { data: detection, error: detectionError } = await supabase
+        .from('detections')
+        .insert({
+          user_id: userId,
+          username: username,
+          title: value,
+          seniority_level: seniorityLevel,
+          detected_at: new Date().toISOString(),
+          rules_version: 'v1',
+          included_in_digest: false
+        })
+        .select()
+        .single()
+      
+      if (detectionError) {
+        console.error('Error creating detection:', detectionError)
+      } else {
+        console.log(`✅ Detection record created (ID: ${detection.id})`)
+        
+        // ============================================
+        // REAL-TIME NOTIFICATION: Deploy AA Bot Immediately
+        // ============================================
+        console.log('🚀 Triggering immediate AA bot deployment...')
+        
+        // Call send-notification Edge Function (we'll create this)
+        const notificationUrl = `${Deno.env.get('SUPABASE_URL')}/functions/v1/send-notification`
+        
+        try {
+          const notifyResponse = await fetch(notificationUrl, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`
+            },
+            body: JSON.stringify({
+              detection_id: detection.id,
+              user_id: userId,
+              username: username,
+              title: value,
+              seniority_level: seniorityLevel
+            })
+          })
+          
+          if (notifyResponse.ok) {
+            const notifyResult = await notifyResponse.json()
+            console.log('✅ Notification sent successfully:', notifyResult)
+          } else {
+            console.error('❌ Notification failed:', await notifyResponse.text())
+          }
+        } catch (notifyError) {
+          console.error('❌ Error sending notification:', notifyError)
+          // Don't fail the webhook - notification failures should not block
+        }
+      }
+      
+      // Mark event as processed
+      await supabase
+        .from('events_raw')
+        .update({ processed: true, processed_at: new Date().toISOString() })
+        .eq('id', eventData.id)
+      
+      return new Response(
+        JSON.stringify({ 
+          status: 'accepted',
+          event_id: eventData.id,
+          classification: 'senior',
+          seniority_level: seniorityLevel,
+          notification: 'sent'
+        }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
+    } else {
+      // Not a senior executive - just mark as processed
+      console.log(`ℹ️  Not a senior executive: ${value}`)
+      
+      await supabase
+        .from('events_raw')
+        .update({ processed: true, processed_at: new Date().toISOString() })
+        .eq('id', eventData.id)
+      
+      return new Response(
+        JSON.stringify({ 
+          status: 'accepted',
+          event_id: eventData.id,
+          classification: 'not_senior'
+        }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
+    }
     
   } catch (error) {
     console.error('Error processing webhook:', error)
