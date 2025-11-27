@@ -73,6 +73,10 @@ async def receive_webhook(event: WebhookEvent, background_tasks: BackgroundTasks
     Receive webhook from community platform.
     
     Processes user profile updates, specifically job title changes.
+    
+    Note: For production with Supabase Edge Functions, webhooks go to
+    the Edge Function first, which stores in events_raw table.
+    This endpoint can still be used for direct webhook integration.
     """
     logger.info(f"Received webhook for user {event.userId}, field: {event.profileField}")
     
@@ -98,6 +102,76 @@ async def receive_webhook(event: WebhookEvent, background_tasks: BackgroundTasks
         raise HTTPException(
             status_code=500,
             detail=f"Error processing webhook: {str(e)}"
+        )
+
+
+@app.post("/process-event/{event_id}")
+async def process_queued_event(event_id: int):
+    """
+    Process an event from the events_raw table.
+    
+    Called by Supabase Edge Function or worker process to process
+    events that were queued via webhook.
+    """
+    logger.info(f"Processing queued event {event_id}")
+    
+    try:
+        from .database import get_db
+        db = get_db()
+        
+        # Fetch event from database
+        with db.get_cursor() as cur:
+            cur.execute("""
+                SELECT id, user_id, username, profile_field, value, old_value
+                FROM events_raw
+                WHERE id = %s AND NOT processed
+            """, (event_id,))
+            
+            event_data = cur.fetchone()
+        
+        if not event_data:
+            return JSONResponse(
+                status_code=404,
+                content={"status": "not_found", "message": f"Event {event_id} not found or already processed"}
+            )
+        
+        # Convert to WebhookEvent model
+        event = WebhookEvent(
+            userId=event_data['user_id'],
+            username=event_data['username'] or "Unknown",
+            profileField=event_data['profile_field'],
+            value=event_data['value'],
+            oldValue=event_data['old_value']
+        )
+        
+        # Process event
+        processor = get_event_processor()
+        result = await processor.process_event(event)
+        
+        # Mark as processed
+        with db.get_cursor() as cur:
+            cur.execute("""
+                UPDATE events_raw
+                SET processed = TRUE, processed_at = NOW()
+                WHERE id = %s
+            """, (event_id,))
+        
+        logger.info(f"Queued event {event_id} processed: {result}")
+        
+        return JSONResponse(
+            status_code=200,
+            content={
+                "status": "processed",
+                "event_id": event_id,
+                "result": result
+            }
+        )
+        
+    except Exception as e:
+        logger.error(f"Error processing queued event {event_id}: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error processing event: {str(e)}"
         )
 
 
