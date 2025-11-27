@@ -176,6 +176,13 @@ supabase functions deploy generate-reports
 supabase functions deploy housekeeping
 ```
 
+**Note:** No `--no-verify-jwt` flag needed! JWT verification settings are already configured in each function's `config.json` file:
+- `webhook-handler` - `verify_jwt: false` (accepts external webhooks from inSided)
+- `process-events` - `verify_jwt: false` (scheduled function, no user context)
+- `send-digests` - `verify_jwt: false` (scheduled function)
+- `generate-reports` - `verify_jwt: false` (scheduled function)
+- `housekeeping` - `verify_jwt: false` (scheduled function)
+
 **What each function does:**
 - `webhook-handler` - Receives inSided webhooks (real-time)
 - `process-events` - Processes pending events (runs every minute via cron)
@@ -664,14 +671,36 @@ supabase functions deploy send-digests
 
 ---
 
-## 🔒 Security Checklist
+## 🔒 Security Notes
 
-- [ ] API keys stored in Supabase secrets (not in code)
-- [ ] Database password is strong
-- [ ] Service role key never exposed to client
-- [ ] Webhook endpoint accepts only POST requests
-- [ ] Consider adding webhook signature validation
-- [ ] Enable Row Level Security (RLS) if needed
+### JWT Verification
+
+All Edge Functions have `verify_jwt: false` because:
+- **webhook-handler** - Needs to accept webhooks from inSided (external service)
+- **Scheduled functions** - No user context (triggered by cron, not user requests)
+
+### Optional: Add Webhook Signature Verification
+
+For production, consider adding webhook signature verification in `webhook-handler`:
+
+1. Get webhook secret from inSided
+2. Add to Supabase secrets:
+   ```bash
+   supabase secrets set INSIDED_WEBHOOK_SECRET=your-secret
+   ```
+3. Update `webhook-handler/index.ts` to verify signatures
+
+### Row Level Security (RLS)
+
+Consider enabling RLS on sensitive tables if you build a UI later:
+
+```sql
+-- Enable RLS
+ALTER TABLE detections ENABLE ROW LEVEL SECURITY;
+ALTER TABLE user_state ENABLE ROW LEVEL SECURITY;
+
+-- Add policies as needed
+```
 
 ---
 
