@@ -268,26 +268,89 @@ supabase secrets list
 
 ---
 
-### Step 7: Configure inSided Webhooks (3 minutes)
+### Step 7: Configure inSided Webhooks (5 minutes)
 
-#### 7.1 Get inSided API Key (Optional)
+#### 7.1 Get inSided API Credentials
 
-1. Log into your inSided (Gainsight Community) admin panel
-2. Go to **Admin** → **Settings** → **API**
-3. Click **Generate API Key**
-4. Copy the key
+You need three things from inSided:
 
-#### 7.2 Create Webhook in inSided
+1. **API Token** - Your inSided API authentication token
+2. **API Secret** - Your webhook secret for signature verification
+3. **API Base URL** - Usually `https://api2-us-west-2.insided.com` (check your region)
 
-1. **Admin** → **Settings** → **Webhooks** or **Integrations**
-2. Click **Create New Webhook**
-3. Configure:
-   - **Name**: `CaptPathfinder Senior Exec Detection`
-   - **URL**: `https://YOUR_PROJECT_REF.supabase.co/functions/v1/webhook-handler`
-   - **Method**: `POST`
-   - **Event Type**: `integration.UserProfileUpdated`
-   - **Headers**: `Content-Type: application/json`
-4. Click **Save**
+**How to get credentials:**
+1. Log into your inSided admin panel
+2. Go to **Admin** → **Settings** → **API** or **Integrations**
+3. Generate/copy your API token and secret
+4. Note your API base URL (check inSided documentation for your region)
+
+#### 7.2 Subscribe to Webhook Events
+
+inSided requires you to **subscribe via API** to webhook events. Use the provided script:
+
+**Option A: Using the subscription script (Easiest)**
+
+```bash
+# Set environment variables
+export INSIDED_API_TOKEN="your-api-token"
+export INSIDED_API_SECRET="your-api-secret"
+export SUPABASE_PROJECT_REF="your-project-ref"
+export INSIDED_API_BASE_URL="https://api2-us-west-2.insided.com"
+
+# Run subscription script
+node scripts/subscribe-webhook.js
+```
+
+**Windows (PowerShell):**
+```powershell
+$env:INSIDED_API_TOKEN="your-api-token"
+$env:INSIDED_API_SECRET="your-api-secret"
+$env:SUPABASE_PROJECT_REF="your-project-ref"
+$env:INSIDED_API_BASE_URL="https://api2-us-west-2.insided.com"
+
+node scripts/subscribe-webhook.js
+```
+
+**Option B: Manual API call using curl**
+
+```bash
+curl -X POST \
+  https://api2-us-west-2.insided.com/webhooks/integration.UserProfileUpdated/subscriptions \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer YOUR_INSIDED_API_TOKEN" \
+  -d '{
+    "url": "https://YOUR_PROJECT_REF.supabase.co/functions/v1/webhook-handler",
+    "username": "YOUR_INSIDED_API_TOKEN",
+    "secret": "YOUR_INSIDED_API_SECRET"
+  }'
+```
+
+**Replace:**
+- `YOUR_INSIDED_API_TOKEN` - Your inSided API token
+- `YOUR_INSIDED_API_SECRET` - Your inSided API secret  
+- `YOUR_PROJECT_REF` - Your Supabase project reference
+
+**Expected Response:**
+```json
+{
+  "id": "webhook-subscription-id",
+  "event": "integration.UserProfileUpdated",
+  "url": "https://your-project-ref.supabase.co/functions/v1/webhook-handler",
+  "status": "active"
+}
+```
+
+#### 7.3 Verify Subscription
+
+Check that the subscription was created:
+
+```bash
+curl -X GET \
+  https://api2-us-west-2.insided.com/webhooks/integration.UserProfileUpdated/subscriptions \
+  -H "Authorization: Bearer YOUR_INSIDED_API_TOKEN"
+```
+
+You should see your Edge Function URL in the list.
 
 ---
 
@@ -472,8 +535,19 @@ supabase secrets set AA_TEAMS_BOT_ID=67890
 ```
 
 ### Step 6-7: Configure Webhooks
-1. ✅ Cron schedules automatically set (from config.json files)
-2. ✅ Setup inSided webhook: `https://YOUR_PROJECT_REF.supabase.co/functions/v1/webhook-handler`
+
+**Step 6:** Cron schedules automatically set (from config.json files)
+
+**Step 7:** Subscribe to inSided webhooks:
+```bash
+# Set credentials
+export INSIDED_API_TOKEN="your-token"
+export INSIDED_API_SECRET="your-secret"
+export SUPABASE_PROJECT_REF="your-project-ref"
+
+# Subscribe
+node scripts/subscribe-webhook.js
+```
 
 ### Step 8-9: Test
 ✅ Send test webhook  
