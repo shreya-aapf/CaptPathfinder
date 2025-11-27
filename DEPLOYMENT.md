@@ -42,19 +42,24 @@ Email & Teams notifications ✉️
 2. Click **New Project**
 3. Choose organization
 4. Set project name: `captpathfinder`
-5. Generate database password (save it!)
+5. Generate database password (you can skip saving it - we won't need it!)
 6. Select region: US East (or closest to you)
 7. Click **Create Project**
 8. Wait ~2 minutes for provisioning
 
-#### 1.2 Get Database Connection String
+#### 1.2 Get Project Reference
 
-1. In your project, go to **Settings** (⚙️)
-2. Click **Database**
-3. Scroll to **Connection String** section
-4. Select **URI** tab
-5. Click **Copy** 📋
-6. Save this - you'll need it!
+You'll need your **Project Reference** (Project ID) for later steps:
+
+1. Look at your browser URL: `https://supabase.com/dashboard/project/YOUR_PROJECT_REF`
+2. The `YOUR_PROJECT_REF` is your project reference
+3. **OR** go to **Project Settings** → **General** → copy **Reference ID**
+
+**Example:** `abcdefghijklmnop`
+
+Save this - you'll use it for:
+- Edge Function URLs
+- inSided webhook configuration
 
 #### 1.3 Verify Plan
 
@@ -64,59 +69,106 @@ We use Supabase Edge Function cron triggers instead of pg_cron, so no Pro plan n
 
 ---
 
-### Step 2: Run Database Migrations (3 minutes)
+### Step 2: Run Database Migrations (5 minutes)
 
-Open your terminal and run these commands **in order**:
+**Use Supabase SQL Editor - No connection string needed!**
 
-```bash
-# Set your connection string
-export SUPABASE_DB_URL="<paste-connection-string-from-step-1.2>"
+#### 2.1 Run Migration 001 (Create Tables)
 
-# Run migration 1: Create tables
-psql $SUPABASE_DB_URL -f migrations/001_initial_schema.sql
+1. In your Supabase project, click **SQL Editor** in the left sidebar
+2. Click **+ New Query**
+3. Open `migrations/001_initial_schema.sql` from your project folder on your computer
+4. Copy **all** the contents (Ctrl+A, Ctrl+C)
+5. Paste into the Supabase SQL Editor (Ctrl+V)
+6. Click **Run** (or press Ctrl+Enter)
+7. Wait for "Success. No rows returned" ✅
 
-# Run migration 2: Add classification & processing functions
-psql $SUPABASE_DB_URL -f migrations/002_serverless_functions.sql
+#### 2.2 Run Migration 002 (Add Classification Functions)
 
-# Run migration 3: Setup digest/report functions
-psql $SUPABASE_DB_URL -f scripts/create_functions.sql
+1. Click **+ New Query** again
+2. Open `migrations/002_serverless_functions.sql`
+3. Copy all contents and paste into SQL Editor
+4. Click **Run**
+5. Wait for success ✅
 
-# Note: No pg_cron setup needed - we use Edge Function cron triggers!
-```
+#### 2.3 Run Migration 003 (Add Digest/Report Functions)
 
-**Verify tables created:**
+1. Click **+ New Query** again
+2. Open `scripts/create_functions.sql`
+3. Copy all contents and paste into SQL Editor
+4. Click **Run**
+5. Wait for success ✅
+
+#### 2.4 Verify Tables Created
+
+In SQL Editor, run this query:
+
 ```sql
-psql $SUPABASE_DB_URL -c "\dt"
+SELECT tablename FROM pg_tables WHERE schemaname = 'public';
 ```
 
-You should see: `field_registry`, `events_raw`, `user_state`, `detections`, `digests`, `reports`
+**You should see:**
+- `field_registry`
+- `events_raw`
+- `user_state`
+- `detections`
+- `digests`
+- `reports`
+
+✅ **Database setup complete!**
 
 ---
 
-### Step 3: Deploy Supabase Edge Functions (5 minutes)
+### Step 3: Install Supabase CLI (2 minutes)
 
-#### 3.1 Login to Supabase CLI
+**Windows:**
+```bash
+npm install -g supabase
+```
+
+**Mac/Linux:**
+```bash
+brew install supabase/tap/supabase
+```
+
+**Or use npx (no install needed):**
+```bash
+npx supabase login
+```
+
+---
+
+### Step 4: Deploy Supabase Edge Functions (5 minutes)
+
+#### 4.1 Login to Supabase CLI
+
+Open your terminal and run:
 
 ```bash
 supabase login
 ```
 
-This will open a browser for authentication.
+This will open a browser for authentication. Click **Allow** to authorize.
 
-#### 3.2 Link Your Project
+#### 4.2 Link Your Project
 
 ```bash
-# Get your project ref from URL: https://app.supabase.com/project/YOUR_PROJECT_REF
+# Navigate to your project folder
+cd "C:\Users\ShreyaKumar\OneDrive - Automation Anywhere\Documents\code\community\CaptPathfinder"
+
+# Link to your Supabase project (use your Project Reference from Step 1.2)
 supabase link --project-ref YOUR_PROJECT_REF
 ```
 
-#### 3.3 Deploy Edge Functions
+**Replace `YOUR_PROJECT_REF`** with your actual project reference (e.g., `abcdefghijklmnop`)
+
+#### 4.3 Deploy All Edge Functions
 
 ```bash
 # Navigate to functions directory
 cd supabase/functions
 
-# Deploy all functions
+# Deploy each function
 supabase functions deploy webhook-handler
 supabase functions deploy process-events
 supabase functions deploy send-digests
@@ -131,16 +183,25 @@ supabase functions deploy housekeeping
 - `generate-reports` - Creates month-end reports (runs last day of month via cron)
 - `housekeeping` - Purges old events (runs daily 2 AM EST via cron)
 
+#### 4.4 Note Your Webhook URL
+
 **Your webhook URL will be:**
 ```
 https://YOUR_PROJECT_REF.supabase.co/functions/v1/webhook-handler
 ```
 
+Replace `YOUR_PROJECT_REF` with your actual project reference.
+
+**Example:**
+```
+https://abcdefghijklmnop.supabase.co/functions/v1/webhook-handler
+```
+
 ---
 
-### Step 4: Configure Automation Anywhere (10 minutes)
+### Step 5: Configure Automation Anywhere (10 minutes)
 
-#### 4.1 Get AA Control Room Details
+#### 5.1 Get AA Control Room Details
 
 You need:
 - Control Room URL: `https://your-instance.automationanywhere.digital`
@@ -153,7 +214,7 @@ You need:
 3. Click **Generate API Key**
 4. Copy immediately (won't be shown again)
 
-#### 4.2 Get Bot IDs
+#### 5.2 Get Bot IDs
 
 For each bot (email and Teams):
 1. Go to **Automation** tab in Control Room
@@ -161,7 +222,7 @@ For each bot (email and Teams):
 3. Note the **Bot ID** (numeric ID visible in bot list or URL)
 4. Example: `12345` or `67890`
 
-#### 4.3 Set Supabase Secrets
+#### 5.3 Set Supabase Secrets
 
 ```bash
 # Set AA credentials as Supabase secrets
@@ -182,7 +243,7 @@ supabase secrets list
 
 ---
 
-### Step 5: Verify Cron Schedules (1 minute)
+### Step 6: Verify Cron Schedules (1 minute)
 
 **Good news:** Cron schedules are already configured in the Edge Function `config.json` files!
 
@@ -200,16 +261,16 @@ supabase secrets list
 
 ---
 
-### Step 6: Configure inSided Webhooks (3 minutes)
+### Step 7: Configure inSided Webhooks (3 minutes)
 
-#### 6.1 Get inSided API Key
+#### 7.1 Get inSided API Key (Optional)
 
 1. Log into your inSided (Gainsight Community) admin panel
 2. Go to **Admin** → **Settings** → **API**
 3. Click **Generate API Key**
 4. Copy the key
 
-#### 6.2 Create Webhook in inSided
+#### 7.2 Create Webhook in inSided
 
 1. **Admin** → **Settings** → **Webhooks** or **Integrations**
 2. Click **Create New Webhook**
@@ -223,9 +284,9 @@ supabase secrets list
 
 ---
 
-### Step 7: Test the System (5 minutes)
+### Step 8: Test the System (5 minutes)
 
-#### 7.1 Test Webhook Receipt
+#### 8.1 Test Webhook Receipt
 
 ```bash
 # Replace YOUR_PROJECT_REF with your actual project ref
@@ -247,29 +308,35 @@ curl -X POST \
 {"status":"accepted","event_id":1}
 ```
 
-#### 7.2 Check Event Stored
+#### 8.2 Check Event Stored
 
+**In Supabase SQL Editor:**
+```sql
+SELECT * FROM events_raw ORDER BY received_at DESC LIMIT 5;
+```
+
+**Or via psql:**
 ```bash
 psql $SUPABASE_DB_URL -c "SELECT * FROM events_raw ORDER BY received_at DESC LIMIT 5;"
 ```
 
 You should see your test event.
 
-#### 7.3 Wait 1 Minute (Edge Function processes events)
+#### 8.3 Wait 1 Minute (Edge Function processes events)
 
 The `process-events` Edge Function runs every minute automatically.
 
-After 1 minute, check:
+After 1 minute, check in **Supabase SQL Editor**:
 
-```bash
-# Check if event was processed
-psql $SUPABASE_DB_URL -c "SELECT * FROM events_raw WHERE processed = TRUE;"
+```sql
+-- Check if event was processed
+SELECT * FROM events_raw WHERE processed = TRUE;
 
-# Check if detection was created
-psql $SUPABASE_DB_URL -c "SELECT * FROM detections ORDER BY detected_at DESC LIMIT 5;"
+-- Check if detection was created
+SELECT * FROM detections ORDER BY detected_at DESC LIMIT 5;
 
-# Check user_state
-psql $SUPABASE_DB_URL -c "SELECT * FROM user_state;"
+-- Check user_state
+SELECT * FROM user_state;
 ```
 
 You should see:
@@ -277,21 +344,23 @@ You should see:
 - Detection record created
 - User in `user_state` table with `seniority_level = 'csuite'`
 
-#### 7.4 Test Classification
+#### 8.4 Test Classification
 
-```bash
-# Test SQL classification function
-psql $SUPABASE_DB_URL -c "SELECT * FROM classify_job_title('CEO');"
-# Expected: is_senior = t, seniority_level = csuite
+**In Supabase SQL Editor:**
 
-psql $SUPABASE_DB_URL -c "SELECT * FROM classify_job_title('VP of Sales');"
-# Expected: is_senior = t, seniority_level = vp
+```sql
+-- Test SQL classification function
+SELECT * FROM classify_job_title('CEO');
+-- Expected: is_senior = t, seniority_level = csuite
 
-psql $SUPABASE_DB_URL -c "SELECT * FROM classify_job_title('Software Engineer');"
-# Expected: is_senior = f, seniority_level = (empty)
+SELECT * FROM classify_job_title('VP of Sales');
+-- Expected: is_senior = t, seniority_level = vp
+
+SELECT * FROM classify_job_title('Software Engineer');
+-- Expected: is_senior = f, seniority_level = (empty)
 ```
 
-#### 7.5 Test Digest Sending
+#### 8.5 Test Digest Sending
 
 ```bash
 # Manually trigger digest send
@@ -311,26 +380,26 @@ Look for:
 
 ---
 
-### Step 8: Test with Real inSided User (Production Test)
+### Step 9: Test with Real inSided User (Production Test)
 
-#### 8.1 Test with Real inSided User
+#### 9.1 Test with Real inSided User
 
 1. Log into inSided as a test user
 2. Go to **Profile** → **Edit Profile**
 3. Update **Job Title** field to: `Chief Technology Officer`
 4. Save
 
-#### 8.2 Monitor the Flow
+#### 9.2 Monitor the Flow
 
 **Check webhook received:**
 ```bash
 supabase functions logs webhook-handler --follow
 ```
 
-**Check database:**
-```bash
-# After 1 minute, event should be processed
-psql $SUPABASE_DB_URL -c "SELECT * FROM detections ORDER BY detected_at DESC LIMIT 1;"
+**Check database in SQL Editor:**
+```sql
+-- After 1 minute, event should be processed
+SELECT * FROM detections ORDER BY detected_at DESC LIMIT 1;
 ```
 
 **Check Edge Function logs:**
@@ -354,38 +423,55 @@ supabase functions logs process-events --follow
 
 ---
 
-## 🗂️ Complete File Checklist
+## 🗂️ Complete Deployment Checklist
 
-Run these in order:
+### Step 1: Create Supabase Project
+1. ✅ Go to https://app.supabase.com
+2. ✅ Create new project
+3. ✅ Get your Project Reference (from URL or Settings)
 
+### Step 2: Run Migrations (No connection string needed!)
+**Use Supabase SQL Editor:**
+1. ✅ Open SQL Editor in Supabase Dashboard
+2. ✅ Run `migrations/001_initial_schema.sql`
+3. ✅ Run `migrations/002_serverless_functions.sql`
+4. ✅ Run `scripts/create_functions.sql`
+
+### Step 3-4: Deploy Edge Functions
 ```bash
-# ✅ Step 1: Create tables
-psql $SUPABASE_DB_URL -f migrations/001_initial_schema.sql
+# Install Supabase CLI
+npm install -g supabase
 
-# ✅ Step 2: Add classification & processing
-psql $SUPABASE_DB_URL -f migrations/002_serverless_functions.sql
+# Login and link
+supabase login
+supabase link --project-ref YOUR_PROJECT_REF
 
-# ✅ Step 3: Add digest/report functions  
-psql $SUPABASE_DB_URL -f scripts/create_functions.sql
-
-# ✅ Step 4: Deploy Edge Functions
+# Deploy all functions
 cd supabase/functions
 supabase functions deploy webhook-handler
 supabase functions deploy process-events
 supabase functions deploy send-digests
 supabase functions deploy generate-reports
 supabase functions deploy housekeeping
-
-# ✅ Step 5: Set secrets
-supabase secrets set AA_CONTROL_ROOM_URL=...
-supabase secrets set AA_USERNAME=...
-supabase secrets set AA_API_KEY=...
-supabase secrets set AA_EMAIL_BOT_ID=...
-supabase secrets set AA_TEAMS_BOT_ID=...
-
-# ✅ Step 6: Cron schedules automatically set (no action needed!)
-# Schedules are defined in config.json files for each Edge Function
 ```
+
+### Step 5: Set AA Secrets
+```bash
+supabase secrets set AA_CONTROL_ROOM_URL=https://your-instance.automationanywhere.digital
+supabase secrets set AA_USERNAME=your-username
+supabase secrets set AA_API_KEY=your-api-key
+supabase secrets set AA_EMAIL_BOT_ID=12345
+supabase secrets set AA_TEAMS_BOT_ID=67890
+```
+
+### Step 6-7: Configure Webhooks
+1. ✅ Cron schedules automatically set (from config.json files)
+2. ✅ Setup inSided webhook: `https://YOUR_PROJECT_REF.supabase.co/functions/v1/webhook-handler`
+
+### Step 8-9: Test
+✅ Send test webhook  
+✅ Verify in SQL Editor  
+✅ Test with real user
 
 ---
 
@@ -496,6 +582,8 @@ Expected functions:
 
 ### Check System Health
 
+**Run in Supabase SQL Editor:**
+
 ```sql
 -- Pending events
 SELECT COUNT(*) FROM events_raw WHERE NOT processed;
@@ -543,9 +631,8 @@ IF normalized_title ~* '(...|\bchief data officer\M|\bcdo\M)'
 ```
 
 **Re-apply:**
-```bash
-psql $SUPABASE_DB_URL -f migrations/002_serverless_functions.sql
-```
+- Run the updated SQL in Supabase SQL Editor, or
+- `psql $SUPABASE_DB_URL -f migrations/002_serverless_functions.sql`
 
 ### Change Email Template
 
@@ -649,14 +736,17 @@ supabase functions logs send-digests
 # List Edge Functions
 supabase functions list
 
-# Check recent detections
-psql $SUPABASE_DB_URL -c "SELECT * FROM detections ORDER BY detected_at DESC LIMIT 10;"
-
 # Manually trigger digest
 curl -X POST https://YOUR_PROJECT_REF.supabase.co/functions/v1/send-digests
+```
 
-# Manually process events
-psql $SUPABASE_DB_URL -c "SELECT process_pending_events();"
+**Check database (use Supabase SQL Editor):**
+```sql
+-- Check recent detections
+SELECT * FROM detections ORDER BY detected_at DESC LIMIT 10;
+
+-- Manually process events
+SELECT process_pending_events();
 ```
 
 ### Common Issues
