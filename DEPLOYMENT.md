@@ -200,12 +200,6 @@ https://aiepzfpaxolupbagqcdd.supabase.co/functions/v1/webhook-handler
 ```
 
 Replace `YOUR_PROJECT_REF` with your actual project reference.
-
-**Example:**
-```
-https://abcdefghijklmnop.supabase.co/functions/v1/webhook-handler
-```
-
 ---
 
 ### Step 5: Configure Automation Anywhere (10 minutes)
